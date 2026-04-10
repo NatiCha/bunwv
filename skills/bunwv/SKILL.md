@@ -9,7 +9,7 @@ Headless browser automation using a persistent WebView session. The daemon keeps
 
 ## Commands
 
-Run all commands with `bunwv <command>` (installed globally via `bun install -g bunwv`).
+Run all commands with `bunwv <command>` (installed globally via `bun install -g @naticha/bunwv`).
 
 All commands accept `--session <name>` to target a named session (default: "default").
 

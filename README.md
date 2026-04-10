@@ -12,7 +12,7 @@ A persistent daemon keeps a browser instance alive so page state — DOM, modals
 ## Install
 
 ```bash
-bun install -g bunwv
+bun install -g @naticha/bunwv
 ```
 
 Requires Bun v1.3.12+ and macOS (uses the native WebKit engine via `WKWebView`).
