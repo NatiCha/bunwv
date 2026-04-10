@@ -1,0 +1,44 @@
+{
+  "name": "bunwv",
+  "version": "0.0.1",
+  "description": "Headless browser automation CLI for Bun, powered by Bun.WebView",
+  "module": "bunwv.ts",
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "type": "bun tsc --noEmit"
+  },
+  "bin": {
+    "bunwv": "./bunwv.ts"
+  },
+  "files": [
+    "bunwv.ts",
+    "lib/daemon.ts",
+    "skills/bunwv/SKILL.md",
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "engines": {
+    "bun": ">=1.3.12"
+  },
+  "keywords": [
+    "bun",
+    "webview",
+    "browser",
+    "automation",
+    "headless",
+    "testing",
+    "cli",
+    "macos"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "^1.3.11"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
