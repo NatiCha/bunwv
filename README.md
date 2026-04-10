@@ -5,6 +5,8 @@
 [![Bun](https://img.shields.io/badge/bun-%3E%3D1.3.12-orange)](https://bun.sh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+![bunwv demo](https://github.com/user-attachments/assets/c09a565a-0031-4698-9e09-6c7c9c222da9)
+
 Headless browser automation CLI for [Bun](https://bun.sh), powered by `Bun.WebView`. Cross-platform: WebKit on macOS (default, zero dependencies), Chrome on macOS/Linux/Windows.
 
 A persistent daemon keeps a browser instance alive so page state — DOM, modals, forms, auth, cookies — survives across commands. Built for AI coding assistants (Claude Code, Cursor, etc.) that interact through screenshots and CLI commands.

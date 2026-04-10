@@ -1,12 +1,20 @@
 {
   "name": "@naticha/bunwv",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Headless browser automation CLI for Bun, powered by Bun.WebView",
   "module": "bunwv.ts",
   "type": "module",
   "private": false,
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naticha/bunwv.git"
+  },
+  "homepage": "https://github.com/naticha/bunwv#readme",
+  "bugs": {
+    "url": "https://github.com/naticha/bunwv/issues"
   },
   "scripts": {
     "type": "bun tsc --noEmit"
