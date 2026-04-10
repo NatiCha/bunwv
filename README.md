@@ -20,13 +20,16 @@ Requires Bun v1.3.12+ and macOS (uses the native WebKit engine via `WKWebView`).
 ### AI Coding Assistant Skill
 
 ```bash
+bunx skills add naticha/bunwv   
+# r
 npx skills add naticha/bunwv
 ```
 
 Or install directly in Claude Code:
 
 ```
-/plugin install naticha/bunwv
+/plugin marketplace add naticha/bunwv
+/plugin install bunwv@naticha/bunwv
 ```
 
 This installs the skill file that teaches AI assistants how to use bunwv for browser testing.
