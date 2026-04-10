@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-const DEFAULT_SCREENSHOT = "/tmp/bunwv-screenshot.png";
-
 const rawArgs = Bun.argv.slice(2);
 const command = rawArgs[0];
 
@@ -57,6 +55,7 @@ All commands accept --session <name> to target a named session (default: "defaul
 
 Session:
   start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms]
+        [--backend webkit|chrome] [--chrome-path PATH]
                             Start a bunwv daemon (default 1920x1080, 30min idle timeout)
   stop                      Stop the daemon and clean up
   status                    Show current URL, title, loading state, and session info
@@ -85,7 +84,12 @@ Interaction:
 
 Inspection:
   screenshot [file]         Save screenshot (default: /tmp/bunwv-screenshot.png)
+        [--format png|jpeg|webp] [--quality 0-100]
   eval <expr>               Evaluate JS in the page (auto-wraps statements)
+  console [--clear]         Show captured page console output
+        [--since <ts>]      Only show messages after timestamp (ms)
+  cdp <method>              Raw Chrome DevTools Protocol call (Chrome backend only)
+        [--params '{}']     JSON params for the CDP method
   resize <w> <h>            Resize the viewport
 
 Waiting:
@@ -146,6 +150,10 @@ if (command === "start") {
   if (height) daemonArgs.push("--height", height);
   if (dataStore) daemonArgs.push("--data-store", dataStore);
   if (idleTimeout) daemonArgs.push("--idle-timeout", idleTimeout);
+  const backendFlag = getFlag("backend");
+  const chromePathFlag = getFlag("chrome-path");
+  if (backendFlag) daemonArgs.push("--backend", backendFlag);
+  if (chromePathFlag) daemonArgs.push("--chrome-path", chromePathFlag);
 
   const proc = Bun.spawn(daemonArgs, {
     stdio: ["ignore", "ignore", "ignore"],
@@ -242,8 +250,13 @@ switch (command) {
   }
 
   case "screenshot": {
-    const filename = positional[0] || DEFAULT_SCREENSHOT;
-    const res = await send("/screenshot");
+    const format = getFlag("format") || "png";
+    const quality = getFlag("quality");
+    const ext = format === "jpeg" ? ".jpg" : format === "webp" ? ".webp" : ".png";
+    const filename = positional[0] || `/tmp/bunwv-screenshot${ext}`;
+    let path = `/screenshot?format=${format}`;
+    if (quality) path += `&quality=${quality}`;
+    const res = await send(path);
     if (res.headers.get("content-type")?.includes("image")) {
       await Bun.write(filename, new Uint8Array(await res.arrayBuffer()));
       console.log(filename);
@@ -335,6 +348,45 @@ switch (command) {
       // Expected — daemon exits before response completes
     }
     console.log(`Daemon stopped (session: "${sessionName}").`);
+    break;
+  }
+
+  case "console": {
+    const clear = getFlag("clear") !== undefined;
+    const since = getFlag("since");
+    const params: string[] = [];
+    if (clear) params.push("clear=true");
+    if (since) params.push(`since=${since}`);
+    const path = "/console" + (params.length ? "?" + params.join("&") : "");
+    const res = await send(path);
+    const data = (await res.json()) as { ok: boolean; messages: { level: string; message: string }[]; error?: string };
+    if (!data.ok) { console.error(`Error: ${data.error}`); process.exit(1); }
+    if (data.messages.length === 0) {
+      console.log("(no console output)");
+    } else {
+      for (const m of data.messages) {
+        console.log(`[${m.level}] ${m.message}`);
+      }
+    }
+    break;
+  }
+
+  case "cdp": {
+    const method = positional[0];
+    if (!method) { console.error("Usage: bunwv cdp <method> [--params '{}']"); process.exit(1); }
+    const paramsStr = getFlag("params");
+    let params = {};
+    if (paramsStr) {
+      try { params = JSON.parse(paramsStr); }
+      catch { console.error("Invalid JSON in --params"); process.exit(1); }
+    }
+    const res = await sendJSON("/cdp", { method, params });
+    if (res.ok) {
+      console.log(JSON.stringify(res.result, null, 2));
+    } else {
+      console.error(`Error: ${res.error}`);
+      process.exit(1);
+    }
     break;
   }
 

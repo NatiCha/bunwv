@@ -15,6 +15,7 @@ All commands accept `--session <name>` to target a named session (default: "defa
 
 ```
 bunwv start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms]
+      [--backend webkit|chrome] [--chrome-path PATH]
 bunwv navigate <url>
 bunwv click <selector> | <x> <y>
 bunwv click-text <text> [--tag <selector>]
@@ -23,8 +24,10 @@ bunwv press <key> [--mod meta,ctrl,shift]
 bunwv clear <selector>
 bunwv submit [--form <selector>] [--button <text>]
 bunwv scroll <dx> <dy> | <selector>
-bunwv screenshot [filename]
+bunwv screenshot [filename] [--format png|jpeg|webp] [--quality 0-100]
 bunwv eval <expression>
+bunwv console [--clear] [--since <timestamp>]
+bunwv cdp <method> [--params '{}']
 bunwv wait-for <selector> [--timeout ms]
 bunwv wait-for-gone <selector> [--timeout ms]
 bunwv status
@@ -183,6 +186,48 @@ bunwv start --data-store ./bunwv-session
 
 Log in once, and future sessions with the same data store stay authenticated. Note: DOM state (open modals, form inputs) only persists within a single daemon session, not across restarts.
 
+## Debugging with Console Capture
+
+Page console output (`console.log`, `console.error`, etc.) is automatically captured. Use this to debug page behavior without writing eval hacks:
+
+```
+bunwv navigate http://localhost:3000
+bunwv click "button.submit"
+bunwv console                    # see any errors or logs from the page
+bunwv console --clear            # read and clear the buffer
+```
+
+Use `--since <timestamp>` to only see new messages since your last check. The buffer holds 1000 messages.
+
+## Screenshot Format Options
+
+Screenshots default to PNG. Use `--format` and `--quality` for smaller file sizes:
+
+```
+bunwv screenshot --format jpeg --quality 80    # saves /tmp/bunwv-screenshot.jpg
+bunwv screenshot --format webp --quality 90    # saves /tmp/bunwv-screenshot.webp
+bunwv screenshot output.jpg --format jpeg      # custom filename
+```
+
+## Chrome Backend & CDP
+
+On macOS, bunwv defaults to WebKit. On Linux/Windows, it automatically uses Chrome. You can override on any platform:
+
+```
+bunwv start --backend chrome                # force Chrome on macOS
+bunwv start --chrome-path /path/to/chromium # custom Chrome path
+```
+
+With Chrome, you can make raw DevTools Protocol calls:
+
+```
+bunwv cdp "Page.getLayoutMetrics"
+bunwv cdp "Network.enable"
+bunwv cdp "Runtime.evaluate" --params '{"expression": "1+1"}'
+```
+
+CDP is only available with the Chrome backend — it will error on WebKit.
+
 ## Error Recovery
 
 If a command fails or times out:
@@ -192,11 +237,11 @@ If a command fails or times out:
 
 ## Screenshot Default
 
-Screenshots default to `/tmp/bunwv-screenshot.png`. Use the Read tool to view them. The same path is overwritten each time, keeping the project directory clean.
+Screenshots default to `/tmp/bunwv-screenshot.png` (or `.jpg`/`.webp` when using `--format`). Use the Read tool to view them. The same path is overwritten each time, keeping the project directory clean.
 
 ## Known Limitations
 
-- **WebKit backend only on macOS** — no visible browser window, headless only
+- **macOS**: defaults to WebKit (no dependencies). **Linux/Windows**: automatically uses Chrome (must be installed). Override with `--backend`.
 - **`click` with CSS selector auto-waits** for actionability (visible, stable, unobscured) but times out after 10s
 - **`click-text` uses JS `.click()` (isTrusted: false)** — use it for navigation links and non-form buttons. For form submission, always use `submit` instead.
 - **`clear` is required for React inputs** — keyboard-based clearing (Cmd+A, Backspace) doesn't update React's internal state

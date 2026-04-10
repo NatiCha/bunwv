@@ -1,11 +1,11 @@
 # bunwv
 
-[![npm](https://img.shields.io/npm/v/bunwv)](https://www.npmjs.com/package/bunwv)
-[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/naticha/bunwv)
+[![npm](https://img.shields.io/npm/v/@naticha/bunwv)](https://www.npmjs.com/package/@naticha/bunwv)
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/naticha/bunwv)
 [![Bun](https://img.shields.io/badge/bun-%3E%3D1.3.12-orange)](https://bun.sh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Headless browser automation CLI for [Bun](https://bun.sh), powered by `Bun.WebView`. macOS only.
+Headless browser automation CLI for [Bun](https://bun.sh), powered by `Bun.WebView`. Cross-platform: WebKit on macOS (default, zero dependencies), Chrome on macOS/Linux/Windows.
 
 A persistent daemon keeps a browser instance alive so page state — DOM, modals, forms, auth, cookies — survives across commands. Built for AI coding assistants (Claude Code, Cursor, etc.) that interact through screenshots and CLI commands.
 
@@ -15,13 +15,13 @@ A persistent daemon keeps a browser instance alive so page state — DOM, modals
 bun install -g @naticha/bunwv
 ```
 
-Requires Bun v1.3.12+ and macOS (uses the native WebKit engine via `WKWebView`).
+Requires Bun v1.3.12+. On macOS, uses the native WebKit engine by default (zero dependencies). On Linux and Windows, automatically uses Chrome/Chromium (must be installed).
 
 ### AI Coding Assistant Skill
 
 ```bash
 bunx skills add naticha/bunwv   
-# r
+# or
 npx skills add naticha/bunwv
 ```
 
@@ -52,7 +52,7 @@ bunwv stop                           # stop the daemon
 
 | Command | Description |
 |---|---|
-| `start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms]` | Start the daemon (default 1920x1080, 30min idle timeout) |
+| `start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms] [--backend webkit\|chrome] [--chrome-path PATH]` | Start the daemon (default 1920x1080, 30min idle timeout) |
 | `stop` | Stop the daemon and clean up |
 | `status` | Show current URL, title, loading state, and session info |
 | `sessions` | List all running sessions |
@@ -84,8 +84,10 @@ bunwv stop                           # stop the daemon
 
 | Command | Description |
 |---|---|
-| `screenshot [file]` | Save screenshot (default: `/tmp/bunwv-screenshot.png`) |
+| `screenshot [file] [--format png\|jpeg\|webp] [--quality 0-100]` | Save screenshot (default: `/tmp/bunwv-screenshot.png`) |
 | `eval <expr>` | Evaluate JS in the page (auto-wraps statements in IIFE) |
+| `console [--clear] [--since <ts>]` | Show captured page console output |
+| `cdp <method> [--params '{}']` | Raw Chrome DevTools Protocol call (Chrome backend only) |
 | `resize <w> <h>` | Resize the viewport |
 
 ### Waiting
@@ -149,6 +151,36 @@ bunwv submit --button "Save Changes"
 bunwv wait-for-gone "[role='dialog']"
 ```
 
+## Console Capture
+
+Page `console.log`, `console.error`, etc. are automatically captured. Read them with:
+
+```bash
+bunwv console                # show all captured output
+bunwv console --clear        # show and clear the buffer
+bunwv console --since 17...  # only messages after a timestamp (ms)
+```
+
+The buffer holds the most recent 1000 messages.
+
+## Chrome Backend & CDP
+
+On macOS, bunwv defaults to WebKit. On Linux/Windows, it automatically uses Chrome. You can override the backend on any platform:
+
+```bash
+bunwv start --backend chrome                   # force Chrome on macOS
+bunwv start --backend webkit                   # force WebKit (macOS only)
+bunwv start --chrome-path /path/to/chromium    # custom Chrome path
+```
+
+With the Chrome backend, you can make raw DevTools Protocol calls:
+
+```bash
+bunwv cdp "Page.getLayoutMetrics"
+bunwv cdp "Network.enable"
+bunwv cdp "Runtime.evaluate" --params '{"expression": "1+1"}'
+```
+
 ## How It Works
 
 ```
@@ -160,7 +192,7 @@ bunwv wait-for-gone "[role='dialog']"
 
 - The daemon spawns on `bunwv start` and listens on a Unix socket
 - Each CLI command sends an HTTP request to the daemon
-- The daemon owns a `Bun.WebView` instance (WebKit on macOS, zero dependencies)
+- The daemon owns a `Bun.WebView` instance (WebKit on macOS, Chrome on Linux/Windows)
 - All clicks are dispatched as OS-level events (`isTrusted: true`)
 - CSS selector-based methods auto-wait for actionability (visible, stable, unobscured)
 - One browser subprocess per Bun process; the daemon manages the full lifecycle

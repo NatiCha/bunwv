@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This is `bunwv` — a headless browser automation CLI built on Bun.WebView (Bun v1.3.12+). macOS only.
+This is `bunwv` — a headless browser automation CLI built on Bun.WebView (Bun v1.3.12+). Cross-platform: WebKit on macOS (default), Chrome on Linux/Windows (auto-detected).
 
 ## Project Structure
 
@@ -44,14 +44,20 @@ See `skills/bunwv/SKILL.md` for full usage documentation. Quick reference:
 ```sh
 bunwv start                        # start the daemon (auto-stops after 30min idle)
 bunwv start --session <name>       # start a named session (isolated from others)
+bunwv start --backend chrome       # use Chrome instead of WebKit
+bunwv start --chrome-path <path>   # use a custom Chrome/Chromium binary
 bunwv sessions                     # list all running sessions
 bunwv navigate <url>               # go to a page
 bunwv screenshot                   # capture to /tmp/bunwv-screenshot.png
+bunwv screenshot --format jpeg --quality 80  # JPEG with quality control
 bunwv click <selector>             # click an element
 bunwv clear <selector>             # clear a React input field
 bunwv type <text>                  # type text
 bunwv submit --button <text>       # submit a form
 bunwv eval <expr>                  # run JS in the page
+bunwv console                      # show captured page console output
+bunwv console --clear              # show and clear the buffer
+bunwv cdp <method> [--params '{}'] # raw Chrome DevTools Protocol call
 bunwv stop                         # stop the daemon
 bunwv help                         # full command list
 ```

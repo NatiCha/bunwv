@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.4] - 2026-04-10
+
+### Added
+
+- Console capture — page `console.log`/`console.error`/etc. buffered and readable via `bunwv console`
+- Screenshot format/quality — `--format png|jpeg|webp` and `--quality 0-100` options
+- Cross-platform support — WebKit on macOS (default), Chrome auto-detected on Linux/Windows
+- Backend selection — `--backend webkit|chrome` and `--chrome-path` on `bunwv start`
+- CDP pass-through — `bunwv cdp <method>` for raw Chrome DevTools Protocol calls
+
 ## [0.0.1] - 2026-04-10
 
 ### Added

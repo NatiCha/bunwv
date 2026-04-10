@@ -1,6 +1,6 @@
 {
   "name": "bunwv",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Headless browser automation CLI for Bun, powered by Bun.WebView",
   "author": {
     "name": "Charles Squeri"

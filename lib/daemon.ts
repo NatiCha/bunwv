@@ -12,8 +12,9 @@ declare module "bun" {
     scroll(dx: number, dy: number): Promise<void>;
     scrollTo(selector: string): Promise<void>;
     evaluate(expr: string): Promise<any>;
-    screenshot(): Promise<Uint8Array>;
+    screenshot(opts?: { format?: string; quality?: number; encoding?: string }): Promise<Uint8Array>;
     resize(width: number, height: number): void;
+    cdp(method: string, params?: Record<string, any>): Promise<any>;
     goBack(): Promise<void>;
     goForward(): Promise<void>;
     reload(): Promise<void>;
@@ -37,6 +38,9 @@ const width = parseInt(getArg("width", "1920"));
 const height = parseInt(getArg("height", "1080"));
 const dataStorePath = getArg("data-store", "");
 const idleTimeoutMs = parseInt(getArg("idle-timeout", "1800000")); // 30 min default
+const defaultBackend = process.platform === "darwin" ? "" : "chrome";
+const backend = getArg("backend", defaultBackend);
+const chromePath = getArg("chrome-path", "");
 
 // Remove stale socket
 try { unlinkSync(SOCKET_PATH); } catch {}
@@ -46,6 +50,21 @@ const viewOpts: Record<string, any> = { width, height };
 if (dataStorePath) {
   viewOpts.dataStore = { directory: dataStorePath };
 }
+if (chromePath) {
+  viewOpts.backend = { type: "chrome", path: chromePath };
+} else if (backend) {
+  viewOpts.backend = backend;
+}
+
+// Console capture — ring buffer of page console output
+interface ConsoleMessage { level: string; message: string; timestamp: number }
+const consoleBuffer: ConsoleMessage[] = [];
+const MAX_CONSOLE = 1000;
+viewOpts.console = (level: string, message: string) => {
+  consoleBuffer.push({ level, message, timestamp: Date.now() });
+  if (consoleBuffer.length > MAX_CONSOLE) consoleBuffer.shift();
+};
+
 const view = new Bun.WebView(viewOpts);
 
 // Timeout helper
@@ -298,12 +317,48 @@ const server = Bun.serve({
       }),
     },
     "/screenshot": {
-      GET: () => withActivity(async () => {
+      GET: (req) => withActivity(async () => {
         try {
-          const png = await view.screenshot();
-          return new Response(png, {
-            headers: { "Content-Type": "image/png" },
+          const url = new URL(req.url, "http://localhost");
+          const format = url.searchParams.get("format") || "png";
+          const qualityStr = url.searchParams.get("quality");
+          if (!["png", "jpeg", "webp"].includes(format)) {
+            return fail("format must be png, jpeg, or webp", 400);
+          }
+          const opts: Record<string, any> = { format };
+          if (qualityStr) opts.quality = parseInt(qualityStr);
+          const img = await view.screenshot(opts);
+          const contentType = format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
+          return new Response(img, {
+            headers: { "Content-Type": contentType },
           });
+        } catch (e: any) {
+          return fail(e.message);
+        }
+      }),
+    },
+    "/console": {
+      GET: (req) => withActivity(() => {
+        const url = new URL(req.url, "http://localhost");
+        const clear = url.searchParams.get("clear") === "true";
+        const since = url.searchParams.get("since");
+        let msgs = consoleBuffer as ConsoleMessage[];
+        if (since) {
+          const ts = parseInt(since);
+          msgs = msgs.filter(m => m.timestamp > ts);
+        }
+        const result = [...msgs];
+        if (clear) consoleBuffer.length = 0;
+        return Response.json({ ok: true, messages: result, count: result.length });
+      }),
+    },
+    "/cdp": {
+      POST: (req) => withActivity(async () => {
+        try {
+          const { method, params } = (await req.json()) as { method: string; params?: Record<string, any> };
+          if (!method) return fail("method is required", 400);
+          const result = await withTimeout(view.cdp(method, params || {}), 30000, "cdp");
+          return ok({ result });
         } catch (e: any) {
           return fail(e.message);
         }
