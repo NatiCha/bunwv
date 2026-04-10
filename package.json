@@ -1,6 +1,6 @@
 {
   "name": "@naticha/bunwv",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Headless browser automation CLI for Bun, powered by Bun.WebView",
   "module": "bunwv.ts",
   "type": "module",
