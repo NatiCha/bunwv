@@ -1,7 +1,7 @@
 # bunwv
 
 [![npm](https://img.shields.io/npm/v/bunwv)](https://www.npmjs.com/package/bunwv)
-[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/NatiCha/bunwv)
+[![macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/naticha/bunwv)
 [![Bun](https://img.shields.io/badge/bun-%3E%3D1.3.12-orange)](https://bun.sh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -20,7 +20,7 @@ Requires Bun v1.3.12+ and macOS (uses the native WebKit engine via `WKWebView`).
 ### Claude Code Plugin
 
 ```
-/plugin install NatiCha/bunwv
+/plugin install naticha/bunwv
 ```
 
 This installs the skill file that teaches Claude Code how to use bunwv for browser testing.
