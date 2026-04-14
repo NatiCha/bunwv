@@ -9,7 +9,7 @@
 
 Headless browser automation CLI for [Bun](https://bun.sh), powered by `Bun.WebView`. Cross-platform: WebKit on macOS (default, zero dependencies), Chrome on macOS/Linux/Windows.
 
-A persistent daemon keeps a browser instance alive so page state — DOM, modals, forms, auth, cookies — survives across commands. Built for AI coding assistants (Claude Code, Cursor, etc.) that interact through screenshots and CLI commands.
+A persistent daemon keeps a browser instance alive so page state — DOM, modals, forms, auth, cookies — survives across commands. Designed **agent-first**: every action verb is silent on success, errors are JSON on stderr with stable exit codes, and event/console buffers are cursor-pulled. Built for AI coding assistants (Claude Code, Cursor, etc.) driving the browser through discrete tool calls.
 
 ## Install
 
@@ -22,7 +22,7 @@ Requires Bun v1.3.12+. On macOS, uses the native WebKit engine by default (zero 
 ### AI Coding Assistant Skill
 
 ```bash
-bunx skills add naticha/bunwv   
+bunx skills add naticha/bunwv
 # or
 npx skills add naticha/bunwv
 ```
@@ -39,14 +39,24 @@ This installs the skill file that teaches AI assistants how to use bunwv for bro
 ## Quick Start
 
 ```bash
-bunwv start                          # start the daemon
-bunwv navigate http://localhost:3000 # go to a page
-bunwv screenshot                     # save screenshot to /tmp/bunwv-screenshot.png
-bunwv click "button.submit"          # click an element
-bunwv type "hello world"             # type into focused element
-bunwv eval "document.title"          # run JS in the page
-bunwv stop                           # stop the daemon
+bunwv start                                  # start the daemon
+bunwv navigate http://localhost:3000         # go to a page
+bunwv screenshot                             # writes /tmp/bunwv-screenshot-<session>.png, prints the path
+bunwv click --selector "button.submit"       # click an element (auto-waits)
+bunwv type "hello world"                     # type into focused element
+bunwv evaluate "document.title"              # run JS in the page, JSON-literal result
+bunwv close                                  # stop the daemon
 ```
+
+## Agent-first contract
+
+- **Successful action verbs print nothing on stdout and exit 0.** `click`, `type`, `navigate`, `press`, `scroll`, `scroll-to`, `clear`, `submit`, `resize`, `back`/`forward`/`reload`, `close`, `exists`, `wait-for`, `wait-for-gone`, `cdp-subscribe`, `cdp-unsubscribe` are all silent. Read verbs (`status`, `evaluate`, `events`, `console`, `cdp`, `cdp-subscriptions`, `screenshot`, `sessions`) print their result.
+- **Stable exit codes**: `0` ok, `1` generic, `2` usage, `3` timeout, `4` element-not-found, `5` daemon-unreachable, `6` batch-partial.
+- **Errors are JSON on stderr**: `{ok:false, error, exitCode}`. Branch on the exit code, not stderr text.
+- **Error-level console auto-surfaces.** If the page logs `console.error`/`console.warn` while a verb runs, `{"console":[…]}` is written to stderr alongside the verb's response.
+- **`--json` global flag** wraps any command's output as `{ok, data?, error?, exitCode}`.
+- **Flexible flags**: `--flag value`, `--flag=value`, repeated flags (e.g. `--mod Shift --mod Control`), and flags before or after the command all work.
+- **`BUNWV_SESSION` env var** replaces `--session <name>` when set.
 
 ## Commands
 
@@ -54,63 +64,76 @@ bunwv stop                           # stop the daemon
 
 | Command | Description |
 |---|---|
-| `start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms] [--backend webkit\|chrome] [--chrome-path PATH]` | Start the daemon (default 1920x1080, 30min idle timeout) |
-| `stop` | Stop the daemon and clean up |
-| `status` | Show current URL, title, loading state, and session info |
+| `start [--width N] [--height N] [--data-store PATH] [--idle-timeout ms] [--backend webkit\|chrome] [--chrome-path PATH] [--chrome-argv '[json]'] [--chrome-url <ws>] [--chrome-stdout inherit\|ignore] [--chrome-stderr inherit\|ignore] [--webkit-stdout inherit\|ignore] [--webkit-stderr inherit\|ignore] [--url <initial>]` | Start the daemon (default 1920x1080, 30min idle timeout) |
+| `close [--all]` | Stop this session, or every running session with `--all` |
+| `status` | Terse: `<url> \| <title> \| <idle\|loading> \| pending=<n>`. `--json` for `loading`, `pendingEvents`, `cursor`, `cdpSubscriptions` |
 | `sessions` | List all running sessions |
 
 ### Navigation
 
 | Command | Description |
 |---|---|
-| `navigate <url>` | Navigate to a URL |
-| `back` | Go back in history |
-| `forward` | Go forward in history |
-| `reload` | Reload the current page |
+| `navigate <url>` | Navigate to a URL (silent) |
+| `back` / `forward` / `reload` | History + refresh (silent) |
 
 ### Interaction
 
 | Command | Description |
 |---|---|
-| `click <selector>` | Click element by CSS selector (auto-waits, `isTrusted: true`) |
-| `click <x> <y>` | Click at coordinates (`isTrusted: true`) |
-| `click-text <text> [--tag <sel>]` | Click element by visible text (JS click) |
+| `click --selector <css>` | Click an element by CSS selector (auto-waits for actionability, `isTrusted: true`) |
+| `click --text <text>` | Click an element by visible text. `--text-match exact\|contains\|regex` (default: trimmed contains) |
+| `click --at <x,y>` | Click at coordinates (no actionability wait) |
+| `click ... [--button left\|right\|middle] [--count 1\|2\|3] [--mod Shift] [--mod Control] [--mod Alt] [--mod Meta] [--timeout ms]` | Modifiers, mouse button, click count, actionability timeout |
+| `exists <selector>` | Silent probe. Exit 0 present, 4 missing |
 | `type <text>` | Type text into the focused element |
-| `press <key> [--mod meta,ctrl,shift,alt]` | Press a key with optional modifiers |
-| `clear <selector>` | Clear an input/textarea (React-compatible) |
+| `press <key> [--mod Shift] [--mod Control] ...` | Press a key with optional modifiers (case-sensitive per Bun.WebView) |
+| `clear <selector>` | Clear an input/textarea (React-compatible native setter) |
 | `submit [--form <sel>] [--button <text>]` | Submit a form via `requestSubmit()` (React-compatible) |
-| `scroll <dx> <dy>` | Scroll by pixel delta |
-| `scroll <selector>` | Scroll element into view |
+| `scroll <dx> <dy>` | Scroll by wheel event |
+| `scroll-to <selector> [--block start\|center\|end\|nearest] [--timeout ms]` | Scroll element into view |
 
 ### Inspection
 
 | Command | Description |
 |---|---|
-| `screenshot [file] [--format png\|jpeg\|webp] [--quality 0-100]` | Save screenshot (default: `/tmp/bunwv-screenshot.png`) |
-| `eval <expr>` | Evaluate JS in the page (auto-wraps statements in IIFE) |
-| `console [--clear] [--since <ts>]` | Show captured page console output |
+| `screenshot [--format png\|jpeg\|webp] [--quality 0-100] [--encoding blob\|buffer\|base64\|shmem] [--out <path>\|-]` | Capture the viewport. Default: writes `/tmp/bunwv-screenshot-<session>.png` and prints the path |
+| `evaluate <expr>` | Evaluate JS in the page. Always prints the JSON-literal result (auto-wraps statements in an IIFE) |
+| `console [--clear] [--since <seq>]` | Captured page console output. Terse: `<seq> [<level>] <message>`. `\n`/`\r` escaped. `--json` for raw messages + cursor |
+| `events [--since <seq>]` | Navigation events + subscribed CDP events since the cursor. 1000 entries / 10 MB LRU cap |
 | `cdp <method> [--params '{}']` | Raw Chrome DevTools Protocol call (Chrome backend only) |
+| `cdp-subscribe <CDP.event> [<CDP.event> ...]` | Subscribe one or more CDP events into the `events` buffer |
+| `cdp-unsubscribe <CDP.event> [<CDP.event> ...]` | Unsubscribe |
+| `cdp-subscriptions` | List active subscriptions |
 | `resize <w> <h>` | Resize the viewport |
 
 ### Waiting
 
 | Command | Description |
 |---|---|
-| `wait-for <selector> [--timeout ms]` | Wait until element appears (default 10s) |
-| `wait-for-gone <selector> [--timeout ms]` | Wait until element is removed (default 10s) |
+| `wait-for <selector>` | Wait until element appears (default 10s) |
+| `wait-for --url <substring>` / `--title <substring>` | Wait for URL or title to contain a substring |
+| `wait-for-gone <selector> \| --url <substr> \| --title <substr>` | Symmetric removal wait |
+| `wait-for ... [--timeout ms]` | Override the 10s default |
 
-All commands accept `--session <name>` to target a named session.
+### Batch
+
+| Command | Description |
+|---|---|
+| `batch [--file <path>] [--keep-going]` | Read NDJSON from stdin (or a file), each line a JSON array of args. Runs all lines in one Bun process, emits one NDJSON envelope per command. Outer flags like `--session` inherit into each line |
+
+All commands accept `--json`, `--session <name>` (or `BUNWV_SESSION` env var), and the flexible flag syntax.
 
 ## Sessions
 
-Sessions are named and isolated. Each runs its own daemon on a separate Unix socket.
+Sessions are named and isolated. Each runs its own daemon on a separate Unix socket. Sockets and PID files are `chmod 0600`, so other local users can't drive your session.
 
 ```bash
-bunwv start                          # starts "default" session
-bunwv start --session staging        # starts a separate "staging" session
-bunwv navigate http://staging:3000 --session staging
-bunwv sessions                       # list all running sessions
-bunwv stop --session staging         # stop a specific session
+bunwv start                          # "default" session
+bunwv start --session staging        # separate "staging" session
+BUNWV_SESSION=staging bunwv navigate http://staging:3000
+bunwv sessions                       # list running sessions
+bunwv close --session staging        # stop one session
+bunwv close --all                    # stop every running session
 ```
 
 **Auto-shutdown** — daemons exit after 30 minutes of inactivity. Override with `--idle-timeout`:
@@ -120,7 +143,7 @@ bunwv start --idle-timeout 3600000   # 1 hour
 bunwv start --idle-timeout 0         # never
 ```
 
-**Reuse detection** — starting an existing session shows its current state:
+**Reuse detection** — starting an existing session reports its current state and exits 0:
 
 ```
 $ bunwv start
@@ -142,11 +165,11 @@ Two commands are specifically designed for React apps:
 
 ```bash
 bunwv clear "input[name='email']"
-bunwv click "input[name='email']"
+bunwv click --selector "input[name='email']"
 bunwv type "new-value@example.com"
 ```
 
-**`submit`** — submits forms via `form.requestSubmit()` which properly triggers React form handlers. `click-text` uses JS `.click()` which produces `isTrusted: false` events that many React forms ignore.
+**`submit`** — submits forms via `form.requestSubmit()`, which properly triggers React form handlers. JS `.click()` produces `isTrusted: false` events that many React forms ignore.
 
 ```bash
 bunwv submit --button "Save Changes"
@@ -155,62 +178,103 @@ bunwv wait-for-gone "[role='dialog']"
 
 ## Console Capture
 
-Page `console.log`, `console.error`, etc. are automatically captured. Read them with:
+Page `console.log`, `console.error`, etc. are captured into a cursor-based ring buffer (1000 entries). `console.error`/`console.warn` entries that fire **during a verb** are auto-surfaced to that verb's stderr as `{"console":[…]}` — the agent sees failures without a second call.
+
+Pull the buffer explicitly:
 
 ```bash
-bunwv console                # show all captured output
-bunwv console --clear        # show and clear the buffer
-bunwv console --since 17...  # only messages after a timestamp (ms)
+bunwv console                        # terse: "<seq> [<level>] <message>"
+bunwv console --clear                # print, then clear
+bunwv console --since 42             # only entries with seq > 42
+bunwv --json console                 # {messages, cursor, truncated?, oldest?}
 ```
 
-The buffer holds the most recent 1000 messages.
+Advance `--since` using the max `seq` you saw (first field of each line). Use `--json` when you need raw multi-line messages or the truncation signal.
 
-## Chrome Backend & CDP
+## Events & CDP
 
-On macOS, bunwv defaults to WebKit. On Linux/Windows, it automatically uses Chrome. You can override the backend on any platform:
+`onNavigated`, `onNavigationFailed`, and any subscribed CDP events land in a shared ring buffer (1000 entries / 10 MB LRU):
 
 ```bash
-bunwv start --backend chrome                   # force Chrome on macOS
-bunwv start --backend webkit                   # force WebKit (macOS only)
-bunwv start --chrome-path /path/to/chromium    # custom Chrome path
+bunwv events --since 0               # full buffer
+bunwv events --since 42              # new events only
 ```
 
-With the Chrome backend, you can make raw DevTools Protocol calls:
+If the buffer evicted older entries, the response includes `"truncated":true,"oldest":<seq>`.
+
+### Chrome backend & CDP
+
+macOS defaults to WebKit; Linux/Windows auto-use Chrome. Override on any platform:
+
+```bash
+bunwv start --backend chrome
+bunwv start --backend webkit                                # macOS only
+bunwv start --chrome-path /path/to/chromium
+bunwv start --chrome-argv '["--headless=new"]'              # extra flags
+bunwv start --chrome-url ws://127.0.0.1:9222/devtools/...   # attach to a running Chrome
+```
+
+Raw CDP calls and subscriptions (Chrome only):
 
 ```bash
 bunwv cdp "Page.getLayoutMetrics"
-bunwv cdp "Network.enable"
 bunwv cdp "Runtime.evaluate" --params '{"expression": "1+1"}'
+
+bunwv cdp "Network.enable"
+bunwv cdp-subscribe Network.responseReceived Network.requestWillBeSent
+bunwv navigate https://example.com
+bunwv events --since 0
+bunwv cdp-unsubscribe Network.responseReceived Network.requestWillBeSent
 ```
+
+## Batch mode
+
+`bunwv batch` runs many commands in a single Bun process, eliminating per-command startup cost. Each stdin line is a JSON array of args; each response is an NDJSON envelope on stdout.
+
+```bash
+cat <<'EOF' | bunwv batch --session staging --keep-going
+["navigate","http://localhost:3000/login"]
+["click","--selector","input[name='email']"]
+["type","me@example.com"]
+["press","Tab"]
+["type","hunter2"]
+["submit","--button","Sign In"]
+["wait-for","--url","/dashboard"]
+["screenshot"]
+EOF
+```
+
+`--keep-going` runs the full list even if one line fails; the process exits `6` (batch-partial) on any failure, `0` on full success. Without `--keep-going`, batch stops at the first failure and returns that line's exit code.
 
 ## How It Works
 
 ```
-┌──────────┐     Unix Socket      ┌──────────────┐     WebKit     ┌─────────┐
-│  bunwv   │ ──── HTTP POST ────▶ │    daemon     │ ──── API ───▶ │ WKWebView│
-│   CLI    │ ◀─── JSON/PNG ────── │ (background)  │ ◀──────────── │ (macOS)  │
-└──────────┘  /tmp/bunwv-*.sock   └──────────────┘               └─────────┘
+┌──────────┐     Unix Socket      ┌───────────────┐    Bun.WebView    ┌──────────────┐
+│  bunwv   │ ──── HTTP POST ────▶ │    daemon     │ ─────── API ────▶ │ WebKit macOS │
+│   CLI    │ ◀─── JSON/bytes ──── │ (background)  │ ◀──────────────── │ Chrome Linux │
+└──────────┘  /tmp/bunwv-*.sock   └───────────────┘                   │   / Windows  │
+                                                                      └──────────────┘
 ```
 
-- The daemon spawns on `bunwv start` and listens on a Unix socket
-- Each CLI command sends an HTTP request to the daemon
-- The daemon owns a `Bun.WebView` instance (WebKit on macOS, Chrome on Linux/Windows)
-- All clicks are dispatched as OS-level events (`isTrusted: true`)
-- CSS selector-based methods auto-wait for actionability (visible, stable, unobscured)
-- One browser subprocess per Bun process; the daemon manages the full lifecycle
+- The daemon spawns on `bunwv start` and listens on a Unix socket (owner-only, `chmod 0600`).
+- Each CLI command sends one HTTP request to the daemon and exits — no long-lived connections.
+- The daemon owns a single `Bun.WebView` instance.
+- All selector/coordinate input is dispatched as **native events** (`isTrusted: true`); selector-based methods auto-wait for actionability (attached, visible, stable, unobscured).
+- Navigation and CDP events are buffered with monotonic `seq` cursors so agents can poll for what's new since their last turn.
 
 ## AI Assistant Integration
 
 bunwv is designed for AI coding assistants that can't see a browser. The typical workflow:
 
 1. **Navigate** to a page
-2. **Screenshot** — the assistant reads the PNG to "see" the page
+2. **Screenshot** — the assistant Reads the PNG to "see" the page
 3. **Decide** what to do based on the screenshot
-4. **Act** — click, type, submit
-5. **Screenshot** again to verify
-6. **Repeat**
+4. **Act** — `click`, `type`, `submit`
+5. **Wait** — `wait-for` a selector, URL, or title change
+6. **Screenshot** again to verify
+7. **Repeat**
 
-The Claude Code skill (`skills/bunwv/SKILL.md`) documents these patterns, including how to handle forms, auth, waiting, and error recovery.
+The Claude Code skill (`skills/bunwv/SKILL.md`) documents these patterns end-to-end, including batch mode, React form handling, error recovery via exit codes, and cursor-based event/console polling.
 
 ## License
 

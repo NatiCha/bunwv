@@ -17,7 +17,7 @@ docs/             # Bun.WebView API reference notes
 ```bash
 bun bunwv.ts help                    # run locally during dev
 bun bunwv.ts start                   # test the daemon
-bun bunwv.ts stop                    # stop it
+bun bunwv.ts close                   # stop it
 ```
 
 Default to Bun for everything — no Node, no npm scripts, no external dependencies.
@@ -43,6 +43,20 @@ Default to Bun for everything — no Node, no npm scripts, no external dependenc
 - **1:1 with Bun.WebView.** Every capability of the `Bun.WebView` type is reachable from the CLI. No JS-API-only escape hatches.
 
 When in doubt: measure the token cost of the default output on the happy path. If it's not roughly zero, justify it.
+
+## When the CLI surface changes
+
+Any change that adds, removes, renames, or alters the behavior of a verb, flag, exit code, or output format must land in **all** of these files in the same commit. The 0.1.0 release shipped with a stale README because this wasn't enforced — don't repeat it.
+
+- `bunwv.ts` — CLI parser and command dispatch
+- `lib/daemon.ts` — matching HTTP route on the daemon
+- `README.md` — public docs on GitHub + npm (commands tables, Quick Start, examples)
+- `skills/bunwv/SKILL.md` — agent-facing docs (command list, usage patterns, limitations)
+- `CLAUDE.md` — this file's "Browser Testing" quick reference at the bottom, plus any relevant design-principle updates
+- `CHANGELOG.md` — a versioned entry under the next release (Breaking / Added / Changed / Migration as appropriate)
+- `package.json` + `.claude-plugin/plugin.json` — version bumps when shipping a release
+
+Before committing a CLI change, grep each file for the old verb/flag name and confirm the new name appears where it should.
 
 ## Key Design Decisions
 
