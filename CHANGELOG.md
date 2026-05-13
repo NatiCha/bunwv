@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-05-13
+
+### Changed
+
+- **Bumped `engines.bun` and `@types/bun` to 1.3.14** (was 1.3.12). The daemon leans on `Bun.serve()`; 1.3.14 ships a use-after-free fix there, plus memory-leak fixes in `node:http` / `child_process` / TLS, GC pause-time reduction, and a JSC update. README badge and "Requires Bun" line synced.
+- **Refreshed the `goBack`/`back` shim comment** in `lib/daemon.ts`. Runtime probe on Bun 1.3.14 confirms `WebView` still exposes only `goBack`/`goForward` even though `@types/bun@1.3.14` declares `back`/`forward`, so the fallback stays. Comment now cites 1.3.14 as the verified version and spells out the drop condition for the next runtime that aligns with the types.
+
+No CLI surface changes — verbs, flags, exit codes, and output formats are identical to 0.1.0.
+
 ## [0.1.0] - 2026-04-14
 
 A one-shot breaking reshape toward an **agent-first** CLI: every capability of `Bun.WebView` 1.3.12 is now reachable from the shell, and defaults favor agents making discrete tool calls (silent on success, stable exit codes, cursor-pull buffers, token-efficient terse output). See `CLAUDE.md` for the full design principles.

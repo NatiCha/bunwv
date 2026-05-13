@@ -554,9 +554,11 @@ const server = Bun.serve({
         } catch (e: any) { return fail(e.message); }
       }),
     },
-    // NOTE: `@types/bun@1.3.12` renames `goBack`/`goForward` to `back`/`forward`,
-    // but the actual runtime binding in Bun 1.3.12 still exposes `goBack`/`goForward`.
-    // Call both and fall back on either, so whichever name ships wins.
+    // NOTE: `@types/bun` declares `back`/`forward` (as of 1.3.14), but the
+    // runtime binding still exposes `goBack`/`goForward` — verified on Bun 1.3.14
+    // (the current `engines.bun` floor). Call both and fall back on either.
+    // Drop the shim once a Bun runtime is confirmed to expose `back`/`forward`
+    // and `engines.bun` is bumped to match.
     "/back": {
       POST: () => withActivity(async () => {
         try {
