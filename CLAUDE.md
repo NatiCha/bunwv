@@ -68,6 +68,8 @@ Before committing a CLI change, grep each file for the old verb/flag name and co
 - Events and console ring buffers: 1000 entries / 10 MB (events) and 1000 entries (console), LRU. Both use monotonic `seq` cursors; responses include `truncated`/`oldest` when the cursor pre-dates retained entries
 - Socket + PID files `chmod 0600` on daemon start — other local users can't connect to this session
 - Default viewport 1920x1080 for readable screenshots
+- Screenshots always pipe through `Bun.Image` on the daemon (Bun 1.3.14+): view captures lossless PNG once, then `Bun.Image` handles resize + final encoding off-thread. `--encoding shmem` is the only bypass; it cannot be combined with `--max-width`/`--max-height`/`--placeholder`/`--metadata`
+- `Bun.Image` has no arbitrary-rect crop in 1.3.14 — element-screenshot / `--clip` is intentionally deferred until we have a CDP-backed path
 
 ## Browser Testing
 
@@ -83,8 +85,16 @@ bunwv click --selector <css> | --text <text> | --at <x,y>
 bunwv exists <selector>            # silent; exit 0 if present, 4 if not
 bunwv type <text>                  #  press <key> [--mod Shift]
 bunwv scroll <dx> <dy>             #  scroll-to <selector> [--block start]
-bunwv screenshot                   # /tmp/bunwv-screenshot-<session>.png
+bunwv screenshot                   # /tmp/bunwv-screenshot-<session>.jpg (JPEG @ q80, default)
+bunwv screenshot --format png|jpeg|webp|avif|heic [--quality 0-100]
+bunwv screenshot --max-width N [--max-height N]  # preserve aspect, no enlarge
+bunwv screenshot --placeholder     # tiny blur-up data URL on stdout (no file)
+bunwv screenshot --metadata        # {width,height,format} JSON on stdout (no pixels)
 bunwv screenshot --encoding base64 | --out -   # pipeable variants
+bunwv image <input> [--out <p>|-] [--format ...] [--quality N]
+                    [--resize WxH | --max-width N | --max-height N]
+                    [--rotate 90|180|270] [--flip] [--flop]
+                    [--metadata] [--placeholder]   # daemon-independent
 bunwv evaluate <expr>              # JSON-literal result
 bunwv console [--since <ts>]       # console buffer
 bunwv events [--since <seq>]       # navigation + CDP-subscribed events

@@ -41,7 +41,9 @@ This installs the skill file that teaches AI assistants how to use bunwv for bro
 ```bash
 bunwv start                                  # start the daemon
 bunwv navigate http://localhost:3000         # go to a page
-bunwv screenshot                             # writes /tmp/bunwv-screenshot-<session>.png, prints the path
+bunwv screenshot                             # writes /tmp/bunwv-screenshot-<session>.jpg (JPEG @ q80), prints the path
+bunwv screenshot --max-width 1024            # bound the longest side; aspect preserved
+bunwv screenshot --metadata                  # {"width","height","format"} instead of pixels
 bunwv click --selector "button.submit"       # click an element (auto-waits)
 bunwv type "hello world"                     # type into focused element
 bunwv evaluate "document.title"              # run JS in the page, JSON-literal result
@@ -96,7 +98,8 @@ bunwv close                                  # stop the daemon
 
 | Command | Description |
 |---|---|
-| `screenshot [--format png\|jpeg\|webp] [--quality 0-100] [--encoding blob\|buffer\|base64\|shmem] [--out <path>\|-]` | Capture the viewport. Default: writes `/tmp/bunwv-screenshot-<session>.png` and prints the path |
+| `screenshot [--format png\|jpeg\|webp\|avif\|heic] [--quality 0-100] [--max-width N] [--max-height N] [--placeholder \| --metadata] [--encoding blob\|buffer\|base64\|shmem] [--out <path>\|-]` | Capture the viewport. **Default: JPEG @ q80, writes `/tmp/bunwv-screenshot-<session>.jpg`** and prints the path. `--max-width`/`--max-height` cap dimensions (aspect preserved, never upscales). `--placeholder` emits a blur-up data URL; `--metadata` emits `{width,height,format}` JSON. AVIF/HEIC encode is Apple-Silicon-only |
+| `image <input> [--out <path>\|-] [--format ...] [--quality N] [--resize WxH \| --max-width N \| --max-height N] [--rotate 90\|180\|270] [--flip] [--flop] [--metadata] [--placeholder]` | Transform a local image via `Bun.Image` — no daemon required. Output format inferred from `--out` extension; defaults to `jpeg`. Default `--out` is the input with the new extension |
 | `evaluate <expr>` | Evaluate JS in the page. Always prints the JSON-literal result (auto-wraps statements in an IIFE) |
 | `console [--clear] [--since <seq>]` | Captured page console output. Terse: `<seq> [<level>] <message>`. `\n`/`\r` escaped. `--json` for raw messages + cursor |
 | `events [--since <seq>]` | Navigation events + subscribed CDP events since the cursor. 1000 entries / 10 MB LRU cap |

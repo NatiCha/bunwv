@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-05-13
+
+`Bun.Image` (introduced in Bun 1.3.14) is now wired into the screenshot path. Agents driving bunwv pay far fewer tokens per screenshot by default, can ask for a metadata-only or thumbhash-style preview when full pixels aren't needed, and can transform arbitrary local images via a new `bunwv image` verb.
+
+### Breaking
+
+- **`screenshot` default format is now `jpeg` (was `png`).** The default output path is `/tmp/bunwv-screenshot-<session>.jpg`. A 1920×1080 page is typically 5–15× smaller as JPEG@80 than PNG, which is the single biggest token-cost win in the screenshot loop. Pass `--format png` to restore the prior behavior. Quality defaults to `80` for any lossy format (`jpeg`, `webp`, `avif`, `heic`) when `--quality` is not given.
+
+### Added
+
+- **`screenshot --max-width N` / `--max-height N`** — bound the longest side(s) without distortion via `Bun.Image#resize({ fit: "inside", withoutEnlargement: true })`. Either or both axes; aspect ratio always preserved; never upscales.
+- **`screenshot --placeholder`** — emits a `Bun.Image#placeholder()` data URL (thumbhash-style blur-up preview) on stdout instead of a file. Tiny (a few hundred bytes); useful when an agent only needs "did the page change."
+- **`screenshot --metadata`** — emits `{"width","height","format"}` JSON on stdout instead of pixels. Lets an agent size-check before deciding to read the image.
+- **`screenshot --format avif|heic`** — added on top of the existing `png|jpeg|webp`. AVIF/HEIC encode is macOS/Windows on Apple Silicon only; a structured error is returned on platforms without support.
+- **New verb `bunwv image <input>`** — runs `Bun.Image` against a local file in the CLI process (no daemon required). Supports `--format`, `--quality`, `--resize WxH`, `--max-width`, `--max-height`, `--rotate 90|180|270`, `--flip`, `--flop`, `--metadata`, `--placeholder`. Default `--out` is the input path with the new extension. Output format is inferred from the `--out` extension when `--format` is omitted, else defaults to `jpeg`.
+
+### Changed
+
+- **Screenshot pipeline always passes through `Bun.Image` on the daemon.** The view captures lossless PNG bytes once and `Bun.Image` handles resize + final encoding off-thread. The `--encoding shmem` path bypasses `Bun.Image` (the view writes encoded bytes straight to a POSIX shm segment), and combining `shmem` with `--max-width/--max-height/--placeholder/--metadata` now returns a usage error.
+
+### Not yet
+
+- `--clip <x,y,w,h>` and `--selector <css>` element screenshots were considered but deferred. `Bun.Image` doesn't expose arbitrary-rect crop, so these need a CDP-backed path (Chrome) or a `WebView`-side clip option that doesn't exist on WebKit today. Tracked for a follow-up release.
+
 ## [0.1.1] - 2026-05-13
 
 ### Changed

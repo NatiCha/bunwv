@@ -16,7 +16,7 @@ bunwv is designed for AI agents driving it via discrete tool calls. A few contra
   - `0` ok, `1` generic, `2` usage, `3` timeout, `4` element-not-found, `5` daemon-unreachable, `6` batch-partial (only in `batch --keep-going`).
 - **`console.error`/`console.warn` auto-surface during verbs.** If the page logs an error while a verb runs, bunwv prints `{"console":[…]}` to stderr. You see the failure without a second call.
 - **Cursor-pull for events.** `events --since <seq>` returns entries newer than the cursor plus a new cursor. Keep the cursor across turns; refetch after actions. If the buffer evicted older entries, the response includes `"truncated":true,"oldest":<seq>`.
-- **File paths for binary output.** `bunwv screenshot` writes bytes to `/tmp/bunwv-screenshot-<session>.png` by default and prints the path on stdout. Use the Read tool on that path to see the image.
+- **File paths for binary output.** `bunwv screenshot` writes bytes to `/tmp/bunwv-screenshot-<session>.jpg` (JPEG @ q80) by default and prints the path on stdout. Use the Read tool on that path to see the image.
 - **`--json` for uniform envelopes.** Any command with `--json` returns `{ok, data?, error?, exitCode}` as a single JSON line. Use it when you prefer one shape over terse output.
 - **Flexible flag syntax.** `--flag value`, `--flag=value`, and repeated flags (e.g. `--mod Shift --mod Control`) all work. Flags may appear before or after the command: `bunwv --json status` and `bunwv status --json` are equivalent.
 - **`BUNWV_SESSION` env var** — set it once and `--session` becomes optional.
@@ -42,8 +42,13 @@ bunwv clear <selector>
 bunwv submit [--form <selector>] [--button <text>]
 bunwv scroll <dx> <dy>
 bunwv scroll-to <selector> [--block start|center|end|nearest] [--timeout ms]
-bunwv screenshot [--format png|jpeg|webp] [--quality 0-100]
+bunwv screenshot [--format png|jpeg|webp|avif|heic] [--quality 0-100]
+      [--max-width N] [--max-height N]
+      [--placeholder | --metadata]
       [--encoding blob|buffer|base64|shmem] [--out <path>|-]
+bunwv image <input> [--out <path>|-] [--format ...] [--quality N]
+      [--resize WxH | --max-width N | --max-height N]
+      [--rotate 90|180|270] [--flip] [--flop] [--metadata] [--placeholder]
 bunwv evaluate <expression>
 bunwv console [--clear] [--since <seq>]       # terse "<seq> [<level>] <message>", cursor-based
 bunwv events [--since <seq>]
@@ -266,17 +271,47 @@ If the buffer evicted older entries, `events` returns `"truncated":true,"oldest"
 
 ## Screenshot Options
 
-Defaults write a file and print its path:
+Defaults write a JPEG (quality 80) to a session-scoped file and print its path. JPEG is the default because it's typically 5–15× smaller than a same-viewport PNG, which makes the screenshot loop dramatically cheaper.
 
 ```
-bunwv screenshot                                    # /tmp/bunwv-screenshot-<session>.png
-bunwv screenshot --format jpeg --quality 80         # /tmp/bunwv-screenshot-<session>.jpg
-bunwv screenshot --out shot.png                     # write to a specific path
+bunwv screenshot                                    # /tmp/bunwv-screenshot-<session>.jpg (JPEG @ q80)
+bunwv screenshot --format png                       # opt back into PNG for pixel-exact comparisons
+bunwv screenshot --format webp --quality 70         # smaller again at the cost of decode speed
+bunwv screenshot --max-width 1024                   # cap longest side; aspect preserved; never upscales
+bunwv screenshot --max-width 800 --max-height 600   # bound both axes
+bunwv screenshot --out shot.jpg                     # write to a specific path
 bunwv screenshot --out -                            # bytes to stdout
 bunwv screenshot --encoding base64                  # base64 string to stdout
 ```
 
-`--encoding shmem` (Kitty terminal) prints `{name, size}` and leaves the POSIX shm segment for the caller to unlink.
+**Cheap previews when you don't need full pixels:**
+
+```
+bunwv screenshot --metadata     # {"width":1920,"height":1080,"format":"png"} — size-check before Reading
+bunwv screenshot --placeholder  # data:image/png;base64,... (tiny blur-up preview, no file)
+```
+
+`--placeholder` and `--metadata` print structured output on stdout instead of writing a file, and are mutually exclusive with each other. They cannot be combined with `--encoding shmem`.
+
+**Platform notes:** `--format avif` and `--format heic` are encode-supported on macOS/Windows running on Apple Silicon only. On other platforms a structured error is returned. Use `jpeg`/`webp`/`png` for portable code.
+
+`--encoding shmem` (Kitty terminal) prints `{name, size}` and leaves the POSIX shm segment for the caller to unlink. It bypasses the `Bun.Image` pipeline, so `--max-width`/`--max-height`/`--placeholder`/`--metadata` are rejected when combined with it.
+
+## Transforming arbitrary images: `bunwv image`
+
+For local image files outside the screenshot loop (uploads, downloaded assets, fixtures), `bunwv image` runs `Bun.Image` directly in the CLI process — no daemon required, no session needed.
+
+```
+bunwv image input.png                                  # input.jpg (jpeg @ q80, same dir)
+bunwv image input.png --out small.webp --max-width 512 # webp, capped at 512 wide, aspect preserved
+bunwv image input.png --resize 200x200                 # explicit resize (may distort if aspect differs)
+bunwv image input.png --rotate 90                      # rotate 90/180/270
+bunwv image input.png --flip                           # vertical flip; --flop is horizontal
+bunwv image input.png --metadata                       # {"width","height","format"} JSON on stdout
+bunwv image input.png --placeholder                    # data: URL on stdout
+```
+
+Output format is inferred from the `--out` extension when `--format` isn't given; otherwise defaults to JPEG. If `--out` is omitted, the result is written next to the input with the new extension.
 
 ## Chrome Backend & CDP
 
