@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@naticha/bunwv)](https://www.npmjs.com/package/@naticha/bunwv)
 [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/naticha/bunwv)
-[![Bun](https://img.shields.io/badge/bun-%3E%3D1.3.12-orange)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/bun-%3E%3D1.3.14-orange)](https://bun.sh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ![bunwv demo](https://github.com/user-attachments/assets/c09a565a-0031-4698-9e09-6c7c9c222da9)
@@ -17,7 +17,7 @@ A persistent daemon keeps a browser instance alive so page state — DOM, modals
 bun install -g @naticha/bunwv
 ```
 
-Requires Bun v1.3.12+. On macOS, uses the native WebKit engine by default (zero dependencies). On Linux and Windows, automatically uses Chrome/Chromium (must be installed).
+Requires Bun v1.3.14+. On macOS, uses the native WebKit engine by default (zero dependencies). On Linux and Windows, automatically uses Chrome/Chromium (must be installed).
 
 ### AI Coding Assistant Skill
 
