@@ -218,9 +218,21 @@ Interaction:
   submit [--form <sel>] [--button <text>]
 
 Inspection:
-  screenshot [--format png|jpeg|webp] [--quality 0-100]
+  screenshot [--format png|jpeg|webp|avif|heic] [--quality 0-100]
+             [--max-width N] [--max-height N]
+             [--placeholder | --metadata]
              [--encoding blob|buffer|base64|shmem] [--out <path>|-]
-                                    Default: writes bytes to /tmp/bunwv-screenshot-<session>.png
+                                    Default: jpeg @ q80, writes /tmp/bunwv-screenshot-<session>.jpg
+                                    --placeholder emits a thumbhash-style data URL on stdout
+                                    --metadata    emits {width,height,format} JSON on stdout
+                                    --max-width/--max-height preserve aspect, never enlarge
+                                    (avif/heic encode requires macOS/Windows on Apple Silicon)
+  image <input> [--out <path>|-] [--format png|jpeg|webp|avif|heic] [--quality 0-100]
+                [--resize WxH | --max-width N | --max-height N]
+                [--rotate 90|180|270] [--flip] [--flop]
+                [--metadata] [--placeholder]
+                                    Transform a local image via Bun.Image (no daemon required).
+                                    Default --out: <input> with new extension.
   evaluate <expr>                   JS in page; prints JSON-literal result (auto-wraps statements)
   exists <selector>                 Silent. Exit 0 if present, 4 if not
   console [--clear] [--since <seq>] Captured page console output (NDJSON; cursor-based)
@@ -345,6 +357,112 @@ Batch:
 
   // Batch is handled at the top level, not here.
 
+  // `bunwv image` is daemon-independent — runs Bun.Image right in the CLI process.
+  if (command === "image") {
+    const input = positional[0];
+    if (!input) return usage(`Usage: bunwv image <input-path> [--out <path>|-]
+       [--format png|jpeg|webp|avif|heic] [--quality 0-100]
+       [--resize WxH] [--max-width N] [--max-height N]
+       [--rotate 90|180|270] [--flip] [--flop]
+       [--metadata] [--placeholder]`);
+    const outFlag = getFlag("out");
+    const format = getFlag("format");
+    const qualityStr = getFlag("quality");
+    const resizeStr = getFlag("resize");
+    const maxWidth = getFlag("max-width");
+    const maxHeight = getFlag("max-height");
+    const rotateStr = getFlag("rotate");
+    const wantFlip = hasFlag("flip");
+    const wantFlop = hasFlag("flop");
+    const wantMetadata = hasFlag("metadata");
+    const wantPlaceholder = hasFlag("placeholder");
+
+    if (wantMetadata && wantPlaceholder) return usage("--metadata and --placeholder are mutually exclusive");
+
+    const file = Bun.file(input);
+    if (!(await file.exists())) return emitError(`input not found: ${input}`, 404);
+
+    let img: any = await (file as any).image();
+
+    if (wantMetadata) {
+      const meta = await img.metadata();
+      if (jsonMode) say(JSON.stringify({ ok: true, data: meta, exitCode: 0 }));
+      else say(JSON.stringify(meta));
+      return { stdout, stdoutBytes, stderr, exitCode: 0 };
+    }
+    if (wantPlaceholder) {
+      const placeholder = await img.placeholder();
+      if (jsonMode) say(JSON.stringify({ ok: true, data: { placeholder }, exitCode: 0 }));
+      else say(placeholder);
+      return { stdout, stdoutBytes, stderr, exitCode: 0 };
+    }
+
+    if (rotateStr) {
+      const deg = parseInt(rotateStr);
+      if (![90, 180, 270].includes(deg)) return usage("--rotate must be 90, 180, or 270");
+      img = img.rotate(deg as 90 | 180 | 270);
+    }
+    if (wantFlip) img = img.flip();
+    if (wantFlop) img = img.flop();
+
+    if (resizeStr) {
+      const m = resizeStr.match(/^(\d+)x(\d+)$/);
+      if (!m) return usage("--resize requires WxH (e.g. --resize 800x600)");
+      img = img.resize(parseInt(m[1]!), parseInt(m[2]!));
+    } else if (maxWidth || maxHeight) {
+      const HUGE = 1_000_000;
+      const w = maxWidth ? parseInt(maxWidth) : HUGE;
+      const h = maxHeight ? parseInt(maxHeight) : HUGE;
+      img = img.resize(w, h, { fit: "inside", withoutEnlargement: true });
+    }
+
+    // Pick output format. If --format isn't given, infer from --out extension; else default jpeg.
+    let outFormat = format as "png" | "jpeg" | "webp" | "avif" | "heic" | undefined;
+    if (!outFormat && outFlag && outFlag !== "-") {
+      const lower = outFlag.toLowerCase();
+      if (lower.endsWith(".png")) outFormat = "png";
+      else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) outFormat = "jpeg";
+      else if (lower.endsWith(".webp")) outFormat = "webp";
+      else if (lower.endsWith(".avif")) outFormat = "avif";
+      else if (lower.endsWith(".heic") || lower.endsWith(".heif")) outFormat = "heic";
+    }
+    if (!outFormat) outFormat = "jpeg";
+    if (!["png", "jpeg", "webp", "avif", "heic"].includes(outFormat)) {
+      return usage("--format must be png, jpeg, webp, avif, or heic");
+    }
+
+    const q = qualityStr ? parseInt(qualityStr) : 80;
+    let bytes: Uint8Array;
+    try {
+      if (outFormat === "png") bytes = await img.png().bytes();
+      else if (outFormat === "jpeg") bytes = await img.jpeg({ quality: q }).bytes();
+      else if (outFormat === "webp") bytes = await img.webp({ quality: q }).bytes();
+      else if (outFormat === "avif") bytes = await img.avif({ quality: q }).bytes();
+      else bytes = await img.heic({ quality: q }).bytes();
+    } catch (e: any) {
+      const platformHint = (outFormat === "avif" || outFormat === "heic")
+        ? " (AVIF/HEIC encode is macOS/Windows on Apple Silicon only)"
+        : "";
+      return emitError(`${outFormat} encode failed: ${e?.message || e}${platformHint}`);
+    }
+
+    if (outFlag === "-") {
+      stdoutBytes = bytes;
+    } else {
+      // Default to input path with a new extension if --out isn't given.
+      const ext =
+        outFormat === "jpeg" ? ".jpg" :
+        outFormat === "webp" ? ".webp" :
+        outFormat === "avif" ? ".avif" :
+        outFormat === "heic" ? ".heic" : ".png";
+      const out = outFlag || input.replace(/\.[^./\\]+$/, "") + ext;
+      await Bun.write(out, bytes);
+      if (jsonMode) say(JSON.stringify({ ok: true, data: { path: out, bytes: bytes.length, format: outFormat }, exitCode: 0 }));
+      else say(out);
+    }
+    return { stdout, stdoutBytes, stderr, exitCode: 0 };
+  }
+
   // All remaining commands require a running daemon.
   if (!(await checkDaemon())) {
     const code = EXIT.daemonUnreachable;
@@ -447,14 +565,26 @@ Batch:
     }
 
     case "screenshot": {
-      const format = getFlag("format") || "png";
+      const format = getFlag("format") || "jpeg";
       const quality = getFlag("quality");
       const encoding = getFlag("encoding") || "blob";
       const outFlag = getFlag("out");
-      const ext = format === "jpeg" ? ".jpg" : format === "webp" ? ".webp" : ".png";
+      const maxWidth = getFlag("max-width");
+      const maxHeight = getFlag("max-height");
+      const wantPlaceholder = hasFlag("placeholder");
+      const wantMetadata = hasFlag("metadata");
+      const ext =
+        format === "jpeg" ? ".jpg" :
+        format === "webp" ? ".webp" :
+        format === "avif" ? ".avif" :
+        format === "heic" ? ".heic" : ".png";
       const defaultOut = `/tmp/bunwv-screenshot-${sessionName}${ext}`;
       const params = new URLSearchParams({ format, encoding });
       if (quality) params.set("quality", quality);
+      if (maxWidth) params.set("max-width", maxWidth);
+      if (maxHeight) params.set("max-height", maxHeight);
+      if (wantPlaceholder) params.set("placeholder", "true");
+      if (wantMetadata) params.set("metadata", "true");
       const response = await send(`/screenshot?${params.toString()}`);
       if (!(response instanceof Response)) return response;
       emitConsoleErrors(response.headers.get("X-Console-Errors"));
@@ -472,7 +602,14 @@ Batch:
       } else {
         const data = (await response.json()) as any;
         if (!data.ok) return emitError(data.error, response.status);
-        if (encoding === "base64") {
+        if (wantMetadata) {
+          const payload = { width: data.width, height: data.height, format: data.format };
+          if (jsonMode) say(JSON.stringify({ ok: true, data: payload, exitCode: 0 }));
+          else say(JSON.stringify(payload));
+        } else if (wantPlaceholder) {
+          if (jsonMode) say(JSON.stringify({ ok: true, data: { placeholder: data.placeholder }, exitCode: 0 }));
+          else say(data.placeholder);
+        } else if (encoding === "base64") {
           if (!outFlag || outFlag === "-") {
             if (jsonMode) say(JSON.stringify({ ok: true, data: stripOk(data), exitCode: 0 }));
             else say(data.data);

@@ -408,24 +408,77 @@ const server = Bun.serve({
       GET: (req) => withActivity(async () => {
         try {
           const url = new URL(req.url, "http://localhost");
-          const format = (url.searchParams.get("format") || "png") as "png" | "jpeg" | "webp";
+          const format = (url.searchParams.get("format") || "jpeg") as "png" | "jpeg" | "webp" | "avif" | "heic";
           const qualityStr = url.searchParams.get("quality");
           const encoding = (url.searchParams.get("encoding") || "blob") as "blob" | "buffer" | "base64" | "shmem";
-          if (!["png", "jpeg", "webp"].includes(format)) return fail("format must be png, jpeg, or webp", 400);
+          const maxWidthStr = url.searchParams.get("max-width");
+          const maxHeightStr = url.searchParams.get("max-height");
+          const wantPlaceholder = url.searchParams.get("placeholder") === "true";
+          const wantMetadata = url.searchParams.get("metadata") === "true";
+
+          if (!["png", "jpeg", "webp", "avif", "heic"].includes(format)) return fail("format must be png, jpeg, webp, avif, or heic", 400);
           if (!["blob", "buffer", "base64", "shmem"].includes(encoding)) return fail("encoding must be blob, buffer, base64, or shmem", 400);
-          const baseOpts: any = { format };
-          if (qualityStr) baseOpts.quality = parseInt(qualityStr);
-          if (encoding === "base64") {
-            const data = await view.screenshot({ ...baseOpts, encoding: "base64" });
-            return Response.json({ ok: true, data, format });
+          if (encoding === "shmem" && (maxWidthStr || maxHeightStr || wantPlaceholder || wantMetadata)) {
+            return fail("--encoding shmem cannot be combined with --max-width/--max-height/--placeholder/--metadata", 400);
           }
+          if (wantPlaceholder && wantMetadata) return fail("--placeholder and --metadata are mutually exclusive", 400);
+
+          // shmem: bypass Bun.Image — the view writes encoded bytes directly to a POSIX shm segment.
+          // The native view encoder only supports png/jpeg/webp; avif/heic require Bun.Image.
           if (encoding === "shmem") {
+            if (format !== "png" && format !== "jpeg" && format !== "webp") {
+              return fail(`--encoding shmem does not support --format ${format} (use png, jpeg, or webp)`, 400);
+            }
             const shm = await view.screenshot({ encoding: "shmem", format, ...(qualityStr ? { quality: parseInt(qualityStr) } : {}) });
             return Response.json({ ok: true, name: shm.name, size: shm.size, format });
           }
-          const img = await view.screenshot(baseOpts);
-          const contentType = format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
-          return new Response(img, { headers: { "Content-Type": contentType } });
+
+          // Always capture PNG from the view (lossless) so Bun.Image can transform without recompressing twice.
+          const raw = await view.screenshot({ format: "png", encoding: "buffer" } as any);
+          let img: any = new (Bun as any).Image(raw);
+
+          if (wantMetadata) {
+            const meta = await img.metadata();
+            return Response.json({ ok: true, ...meta });
+          }
+          if (wantPlaceholder) {
+            const placeholder = await img.placeholder();
+            return Response.json({ ok: true, placeholder });
+          }
+
+          const maxW = maxWidthStr ? parseInt(maxWidthStr) : 0;
+          const maxH = maxHeightStr ? parseInt(maxHeightStr) : 0;
+          if (maxW > 0 || maxH > 0) {
+            // Bun.Image's `fit` is "fill" or "inside" — "inside" preserves aspect.
+            // One-sided cap: pass a huge value for the other axis so it never constrains.
+            const HUGE = 1_000_000;
+            img = img.resize(maxW > 0 ? maxW : HUGE, maxH > 0 ? maxH : HUGE, { fit: "inside", withoutEnlargement: true });
+          }
+
+          const q = qualityStr ? parseInt(qualityStr) : 80;
+          let bytes: Uint8Array;
+          try {
+            if (format === "png") bytes = await img.png().bytes();
+            else if (format === "jpeg") bytes = await img.jpeg({ quality: q }).bytes();
+            else if (format === "webp") bytes = await img.webp({ quality: q }).bytes();
+            else if (format === "avif") bytes = await img.avif({ quality: q }).bytes();
+            else bytes = await img.heic({ quality: q }).bytes();
+          } catch (e: any) {
+            const platformHint = (format === "avif" || format === "heic")
+              ? " (AVIF/HEIC encode is macOS/Windows on Apple Silicon only)"
+              : "";
+            return Response.json({ ok: false, error: `${format} encode failed: ${e?.message || e}${platformHint}` }, { status: 501 });
+          }
+
+          if (encoding === "base64") {
+            return Response.json({ ok: true, data: Buffer.from(bytes).toString("base64"), format });
+          }
+          const contentType =
+            format === "jpeg" ? "image/jpeg" :
+            format === "webp" ? "image/webp" :
+            format === "avif" ? "image/avif" :
+            format === "heic" ? "image/heic" : "image/png";
+          return new Response(bytes, { headers: { "Content-Type": contentType } });
         } catch (e: any) { return fail(e.message); }
       }),
     },
